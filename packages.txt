@@ -1,1 +1,3 @@
 swig
+build-essential
+libopenblas-dev
