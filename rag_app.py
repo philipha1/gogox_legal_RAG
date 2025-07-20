@@ -12,8 +12,10 @@ st.set_page_config(page_title="GoGoX RAG Q&A", page_icon="🤖")
 st.title("GoGoX Regulatory and Disclosure Q&A App")
 st.write("Ask questions based on HKEX Main Board Listing Rules and GoGoX disclosure documents.")
 
-# OpenAI API key setup (using Streamlit Cloud's secrets.toml)
+# OpenAI API key setup with debugging
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)
+st.write("Secrets loaded:", st.secrets)  # 디버깅용
+st.write("Current directory:", os.path.dirname(__file__))  # 경로 디버깅
 if not OPENAI_API_KEY:
     st.error("OpenAI API key is not configured. Please contact the administrator.")
     st.stop()
@@ -21,9 +23,9 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 # JSON loading function with dynamic path adjustment
 def load_json(file_path):
-    # Adjust path based on potential subdirectories
     base_path = os.path.dirname(__file__)
     full_path = os.path.join(base_path, file_path)
+    st.write(f"Attempting to load: {full_path}")  # 디버깅용
     try:
         with open(full_path, "r", encoding="utf-8") as f:
             return json.load(f)
