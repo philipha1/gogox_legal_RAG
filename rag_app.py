@@ -13,9 +13,9 @@ st.title("GoGoX Regulatory and Disclosure Q&A App")
 st.write("Ask questions based on HKEX Main Board Listing Rules and GoGoX disclosure documents.")
 
 # OpenAI API key setup with debugging
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)
 st.write("Secrets loaded:", st.secrets)  # 디버깅용
 st.write("Current directory:", os.path.dirname(__file__))  # 경로 디버깅
+OPENAI_API_KEY = st.secrets.get("secrets", {}).get("OPENAI_API_KEY")  # 중첩된 secrets에서 추출
 if not OPENAI_API_KEY:
     st.error("OpenAI API key is not configured. Please contact the administrator.")
     st.stop()
