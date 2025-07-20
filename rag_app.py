@@ -19,8 +19,11 @@ OPENAI_API_KEY = st.secrets.get("secrets", {}).get("OPENAI_API_KEY")  # 중첩�
 if not OPENAI_API_KEY:
     st.error("OpenAI API key is not configured. Please contact the administrator.")
     st.stop()
-client = OpenAI(api_key=OPENAI_API_KEY)
+# 디버깅: OpenAI 클라이언트 초기화 시 인자 확인
+st.write("Creating OpenAI client with API key:", OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY)  # proxies 인자 제거 확인
 
+# 나머지 코드...
 # JSON loading function with dynamic path adjustment
 def load_json(file_path):
     base_path = os.path.dirname(__file__)
