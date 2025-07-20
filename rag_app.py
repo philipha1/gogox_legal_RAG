@@ -19,16 +19,19 @@ if not OPENAI_API_KEY:
     st.stop()
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# JSON loading function
+# JSON loading function with dynamic path adjustment
 def load_json(file_path):
+    # Adjust path based on potential subdirectories
+    base_path = os.path.dirname(__file__)
+    full_path = os.path.join(base_path, file_path)
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(full_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        st.error(f"File not found: {file_path}")
+        st.error(f"File not found: {full_path}")
         return []
     except json.JSONDecodeError:
-        st.error(f"JSON parsing error: {file_path}")
+        st.error(f"JSON parsing error: {full_path}")
         return []
 
 # Load RAG pipeline with caching
@@ -36,7 +39,7 @@ def load_json(file_path):
 def load_rag_pipeline():
     start = time.time()
     
-    # 1. Load JSON data
+    # 1. Load JSON data with adjusted paths
     rules1 = load_json("all_rules_merged.json")
     rules2 = load_json("gogox_announcements.json")
     if not rules1 and not rules2:
@@ -77,7 +80,7 @@ def load_rag_pipeline():
     for i in range(0, len(corpus), batch_size):
         batch = corpus[i:i + batch_size]
         batch_embeddings = embedding_model.encode(
-            batch, batch_size=batch_size, device="cpu"  # Use CPU for Streamlit Cloud
+            batch, batch_size=batch_size, device="cpu"
         )
         embeddings.append(batch_embeddings)
     embeddings = np.vstack(embeddings)
