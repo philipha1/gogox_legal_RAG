@@ -12,8 +12,8 @@ st.set_page_config(page_title="GoGoX RAG Q&A", page_icon="🤖")
 st.title("GoGoX Regulatory and Disclosure Q&A App")
 st.write("Ask questions based on HKEX Main Board Listing Rules and GoGoX disclosure documents.")
 
-# OpenAI API key setup (임시로 코드에 삽입)
-OPENAI_API_KEY = "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"
+# OpenAI API key setup (using Streamlit Cloud's secrets.toml)
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)
 if not OPENAI_API_KEY:
     st.error("OpenAI API key is not configured. Please contact the administrator.")
     st.stop()
