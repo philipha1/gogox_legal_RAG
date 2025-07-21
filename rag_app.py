@@ -6,6 +6,7 @@ import json
 import time
 from openai import OpenAI
 import os
+import traceback  # 예외 상세 추적
 
 # Streamlit page configuration
 st.set_page_config(page_title="GoGoX RAG Q&A", page_icon="🤖")
@@ -13,18 +14,27 @@ st.title("GoGoX Regulatory and Disclosure Q&A App")
 st.write("Ask questions based on HKEX Main Board Listing Rules and GoGoX disclosure documents.")
 
 # OpenAI API key setup with debugging
-st.write("Secrets loaded:", st.secrets)  # 디버깅용
-st.write("Current directory:", os.path.dirname(__file__))  # 경로 디버깅
-OPENAI_API_KEY = st.secrets.get("secrets", {}).get("OPENAI_API_KEY")
+st.write("Secrets file path:", os.path.join(os.path.dirname(__file__), ".streamlit/secrets.toml"))  # 경로 디버깅
+try:
+    st.write("Secrets loaded:", st.secrets)  # 디버깅용
+except Exception as e:
+    st.error(f"Secrets loading error: {e}")
+    st.stop()
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)  # Streamlit Cloud 기본 구조
 if not OPENAI_API_KEY:
     st.error("OpenAI API key is not configured. Please contact the administrator.")
     st.stop()
 st.write("Creating OpenAI client with API key:", OPENAI_API_KEY)
 try:
-    client = OpenAI(api_key=OPENAI_API_KEY, http_client=None)  # Cloud에서 proxies 문제 해결
+    client = OpenAI(
+        api_key=OPENAI_API_KEY,
+        http_client=None,  # Cloud에서 proxies 문제 해결
+        proxies=None       # 명시적 프록시 비활성화
+    )
     st.write("OpenAI client initialized successfully")
 except Exception as e:
     st.error(f"OpenAI API error: {e}")
+    st.write("Traceback:", traceback.format_exc())  # 상세 오류 출력
     st.stop()
 
 # JSON loading function with dynamic path adjustment
@@ -71,6 +81,7 @@ def load_rag_pipeline():
     # 3. Load embedding model
     try:
         embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+        st.write("Embedding model loaded successfully")
     except Exception as e:
         st.error(f"Embedding model loading error: {e}")
         return None, None, None
@@ -88,7 +99,7 @@ def load_rag_pipeline():
     for i in range(0, len(corpus), batch_size):
         batch = corpus[i:i + batch_size]
         batch_embeddings = embedding_model.encode(
-            batch, batch_size=batch_size, device="cpu"
+            batch, batch_size=batch_size, device="cpu"  # Cloud 호환
         )
         embeddings.append(batch_embeddings)
     embeddings = np.vstack(embeddings)
@@ -98,6 +109,7 @@ def load_rag_pipeline():
         dimension = embeddings.shape[1]
         index = faiss.IndexFlatL2(dimension)
         index.add(embeddings)
+        st.write("FAISS index created successfully")
     except Exception as e:
         st.error(f"FAISS index creation error: {e}")
         return None, None, None
@@ -158,6 +170,7 @@ Answer:
         return response.choices[0].message.content, [deduplicated_rules[i] for i in I[0]]
     except Exception as e:
         st.error(f"OpenAI API error: {e}")
+        st.write("Traceback:", traceback.format_exc())  # 상세 오류 출력
         return None, []
 
 # Chat interface
@@ -187,7 +200,7 @@ if user_query := st.chat_input("Enter your question (e.g., What is the minimum p
             # Display answer
             with st.chat_message("assistant"):
                 st.markdown(answer)
-            st.session_state.messages.append({"role": "assistant", "content": answer})  # 괄호 수정
+            st.session_state.messages.append({"role": "assistant", "content": answer})
             
             # Display retrieved documents
             with st.expander("View Retrieved Documents"):
