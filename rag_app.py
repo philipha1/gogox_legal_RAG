@@ -49,6 +49,8 @@ def load_json(file_path):
         with open(full_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             st.write(f"Successfully loaded {file_path} with {len(data)} entries")  # Debugging
+            # Limit to 500 entries to reduce memory usage
+            data = data[:500]
             return data
     except FileNotFoundError:
         st.error(f"File not found: {full_path}")
