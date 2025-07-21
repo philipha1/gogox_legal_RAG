@@ -31,19 +31,20 @@ except Exception as e:
  st.stop()
 
 # Function to load JSON files with dynamic path adjustment
+# Function to load JSON files with dynamic path adjustment
 def load_json(file_path):
- base_path = os.path.dirname(__file__)
- full_path = os.path.join(base_path, file_path)
- st.write(f"Attempting to load: {full_path}") # Debugging
- try:
- with open(full_path, "r", encoding="utf-8") as f:
- return json.load(f)
- except FileNotFoundError:
- st.error(f"File not found: {full_path}")
- return []
- except json.JSONDecodeError:
- st.error(f"JSON parsing error: {full_path}")
- return []
+    base_path = os.path.dirname(__file__)
+    full_path = os.path.join(base_path, file_path)
+    st.write(f"Attempting to load: {full_path}")  # Debugging
+    try:
+        with open(full_path, "r", encoding="utf-8") as f:  # Indented with 4 spaces
+            return json.load(f)
+    except FileNotFoundError:
+        st.error(f"File not found: {full_path}")
+        return []
+    except json.JSONDecodeError:
+        st.error(f"JSON parsing error: {full_path}")
+        return []
 
 # Load RAG pipeline with caching
 @st.cache_resource
