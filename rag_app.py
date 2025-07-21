@@ -6,7 +6,8 @@ import json
 import time
 from openai import OpenAI
 import os
-import traceback  # 예외 상세 추적
+import httpx
+import traceback
 
 # Streamlit page configuration
 st.set_page_config(page_title="GoGoX RAG Q&A", page_icon="🤖")
@@ -14,34 +15,31 @@ st.title("GoGoX Regulatory and Disclosure Q&A App")
 st.write("Ask questions based on HKEX Main Board Listing Rules and GoGoX disclosure documents.")
 
 # OpenAI API key setup with debugging
-st.write("Secrets file path:", os.path.join(os.path.dirname(__file__), ".streamlit/secrets.toml"))  # 경로 디버깅
+st.write("Secrets file path:", os.path.join(os.path.dirname(__file__), ".streamlit/secrets.toml"))
 try:
-    st.write("Secrets loaded:", st.secrets)  # 디버깅용
+    st.write("Secrets loaded:", st.secrets)
 except Exception as e:
     st.error(f"Secrets loading error: {e}")
     st.stop()
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)  # Streamlit Cloud 기본 구조
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)
 if not OPENAI_API_KEY:
     st.error("OpenAI API key is not configured. Please contact the administrator.")
     st.stop()
 st.write("Creating OpenAI client with API key:", OPENAI_API_KEY)
 try:
-    client = OpenAI(
-        api_key=OPENAI_API_KEY,
-        http_client=None,  # Cloud에서 proxies 문제 해결
-        proxies=None       # 명시적 프록시 비활성화
-    )
+    http_client = httpx.Client(proxies=None)  # 프록시 명시적 비활성화
+    client = OpenAI(api_key=OPENAI_API_KEY, http_client=http_client)
     st.write("OpenAI client initialized successfully")
 except Exception as e:
     st.error(f"OpenAI API error: {e}")
-    st.write("Traceback:", traceback.format_exc())  # 상세 오류 출력
+    st.write("Traceback:", traceback.format_exc())
     st.stop()
 
 # JSON loading function with dynamic path adjustment
 def load_json(file_path):
     base_path = os.path.dirname(__file__)
     full_path = os.path.join(base_path, file_path)
-    st.write(f"Attempting to load: {full_path}")  # 디버깅용
+    st.write(f"Attempting to load: {full_path}")
     try:
         with open(full_path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -99,7 +97,7 @@ def load_rag_pipeline():
     for i in range(0, len(corpus), batch_size):
         batch = corpus[i:i + batch_size]
         batch_embeddings = embedding_model.encode(
-            batch, batch_size=batch_size, device="cpu"  # Cloud 호환
+            batch, batch_size=batch_size, device="cpu"
         )
         embeddings.append(batch_embeddings)
     embeddings = np.vstack(embeddings)
@@ -139,83 +137,3 @@ def ask_openai_once(query: str, embedding_model, index, deduplicated_rules, top_
     
     # 3. OpenAI prompt
     prompt = f"""
-You are a legal and compliance expert at GoGoX, a listed company on the Hong Kong Stock Exchange.
-You are responsible for answering internal and external queries based strictly on GoGoX’s official disclosures submitted to the Stock Exchange.
-
-Use only the information provided below, which comes from GoGoX's official filings and announcements on the HKEX website.
-Do not speculate, do not guess, and do not use any external knowledge. Stick only to what is available in the context.
-
-When appropriate, cite the relevant section or announcement title that supports your answer.
-
-GoGoX Official Disclosure Extract:
------------------------------------
-{retrieved_context}
-
-Question:
-{query}
-
-Answer:
-"""
-    
-    # 4. Call OpenAI API
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You are a legal assistant."},
-                {"role": "user", "content": prompt.strip()}
-            ],
-            temperature=0.2
-        )
-        return response.choices[0].message.content, [deduplicated_rules[i] for i in I[0]]
-    except Exception as e:
-        st.error(f"OpenAI API error: {e}")
-        st.write("Traceback:", traceback.format_exc())  # 상세 오류 출력
-        return None, []
-
-# Chat interface
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# Display existing conversation
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-# User input for questions
-if user_query := st.chat_input("Enter your question (e.g., What is the minimum public float percentage required by HKEX?)"):
-    st.session_state.messages.append({"role": "user", "content": user_query})
-    with st.chat_message("user"):
-        st.markdown(user_query)
-    
-    with st.spinner("Generating answer..."):
-        answer, retrieved_docs = ask_openai_once(
-            query=user_query,
-            embedding_model=embedding_model,
-            index=index,
-            deduplicated_rules=deduplicated_rules
-        )
-        
-        if answer:
-            # Display answer
-            with st.chat_message("assistant"):
-                st.markdown(answer)
-            st.session_state.messages.append({"role": "assistant", "content": answer})
-            
-            # Display retrieved documents
-            with st.expander("View Retrieved Documents"):
-                for i, doc in enumerate(retrieved_docs):
-                    st.markdown(f"**Document {i+1}** (ID: {doc['rule_id']}, Source: {doc['source']}): {doc.get('title', 'N/A')}")
-                    st.markdown(f"{doc['text'][:200]}...")
-        else:
-            st.error("Failed to generate answer. Please try again.")
-
-# Sidebar: App information
-with st.sidebar:
-    st.header("GoGoX RAG App")
-    st.write("A question-answering system based on HKEX disclosures and GoGoX documents.")
-    st.write("Contact: [Company email or contact person]")
-
-# Footer
-st.markdown("---")
-st.markdown("Built with Streamlit and LangChain. GoGoX dedicated RAG app.")
