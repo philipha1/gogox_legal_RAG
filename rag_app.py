@@ -135,5 +135,85 @@ def ask_openai_once(query: str, embedding_model, index, deduplicated_rules, top_
         for i in I[0]
     ])
     
-    # 3. OpenAI prompt
+    # 3. OpenAI prompt (완전한 종료 포함)
     prompt = f"""
+You are a legal and compliance expert at GoGoX, a listed company on the Hong Kong Stock Exchange.
+You are responsible for answering internal and external queries based strictly on GoGoX’s official disclosures submitted to the Stock Exchange.
+
+Use only the information provided below, which comes from GoGoX's official filings and announcements on the HKEX website.
+Do not speculate, do not guess, and do not use any external knowledge. Stick only to what is available in the context.
+
+When appropriate, cite the relevant section or announcement title that supports your answer.
+
+GoGoX Official Disclosure Extract:
+-----------------------------------
+{retrieved_context}
+
+Question:
+{query}
+
+Answer:
+"""
+    
+    # 4. Call OpenAI API
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are a legal assistant."},
+                {"role": "user", "content": prompt.strip()}
+            ],
+            temperature=0.2
+        )
+        return response.choices[0].message.content, [deduplicated_rules[i] for i in I[0]]
+    except Exception as e:
+        st.error(f"OpenAI API error: {e}")
+        st.write("Traceback:", traceback.format_exc())
+        return None, []
+
+# Chat interface
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Display existing conversation
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# User input for questions
+if user_query := st.chat_input("Enter your question (e.g., What is the minimum public float percentage required by HKEX?)"):
+    st.session_state.messages.append({"role": "user", "content": user_query})
+    with st.chat_message("user"):
+        st.markdown(user_query)
+    
+    with st.spinner("Generating answer..."):
+        answer, retrieved_docs = ask_openai_once(
+            query=user_query,
+            embedding_model=embedding_model,
+            index=index,
+            deduplicated_rules=deduplicated_rules
+        )
+        
+        if answer:
+            # Display answer
+            with st.chat_message("assistant"):
+                st.markdown(answer)
+            st.session_state.messages.append({"role": "assistant", "content": answer})
+            
+            # Display retrieved documents
+            with st.expander("View Retrieved Documents"):
+                for i, doc in enumerate(retrieved_docs):
+                    st.markdown(f"**Document {i+1}** (ID: {doc['rule_id']}, Source: {doc['source']}): {doc.get('title', 'N/A')}")
+                    st.markdown(f"{doc['text'][:200]}...")
+        else:
+            st.error("Failed to generate answer. Please try again.")
+
+# Sidebar: App information
+with st.sidebar:
+    st.header("GoGoX RAG App")
+    st.write("A question-answering system based on HKEX disclosures and GoGoX documents.")
+    st.write("Contact: [Company email or contact person]")
+
+# Footer
+st.markdown("---")
+st.markdown("Built with Streamlit and LangChain. GoGoX dedicated RAG app.")
