@@ -12,37 +12,45 @@ st.set_page_config(page_title="GoGoX RAG Q&A", page_icon="🤖")
 st.title("GoGoX Regulatory and Disclosure Q&A App")
 st.write("Ask questions based on HKEX Main Board Listing Rules and GoGoX disclosure documents.")
 
-# OpenAI API key setup (using Streamlit Cloud's secrets.toml)
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)
+# OpenAI API key setup with debugging
+st.write("Secrets loaded:", st.secrets)  # 디버깅용
+st.write("Current directory:", os.path.dirname(__file__))  # 경로 디버깅
+OPENAI_API_KEY = st.secrets.get("secrets", {}).get("OPENAI_API_KEY")  # 중첩된 secrets에서 추출
 if not OPENAI_API_KEY:
     st.error("OpenAI API key is not configured. Please contact the administrator.")
     st.stop()
-client = OpenAI(api_key=OPENAI_API_KEY)
+# 디버깅: OpenAI 클라이언트 초기화 시 인자 확인
+st.write("Creating OpenAI client with API key:", OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY)  # proxies 인자 제거 확인
 
-# JSON loading function
+# 나머지 코드...
+# JSON loading function with dynamic path adjustment
 def load_json(file_path):
+    base_path = os.path.dirname(__file__)
+    full_path = os.path.join(base_path, file_path)
+    st.write(f"Attempting to load: {full_path}")  # 디버깅용
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(full_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        st.error(f"File not found: {file_path}")
+        st.error(f"File not found: {full_path}")
         return []
     except json.JSONDecodeError:
-        st.error(f"JSON parsing error: {file_path}")
+        st.error(f"JSON parsing error: {full_path}")
         return []
 
 # Load RAG pipeline with caching
 @st.cache_resource
 def load_rag_pipeline():
     start = time.time()
-
-    # 1. Load JSON data
+    
+    # 1. Load JSON data with adjusted paths
     rules1 = load_json("all_rules_merged.json")
     rules2 = load_json("gogox_announcements.json")
     if not rules1 and not rules2:
         st.error("Unable to load JSON data.")
         return None, None, None
-
+    
     # 2. Merge JSON and remove duplicates
     combined = rules1 + rules2
     unique_rules = {}
@@ -56,32 +64,32 @@ def load_rag_pipeline():
             unique_rules[rid]["rule_id"] = rid
             unique_rules[rid]["source"] = "rules1" if r in rules1 else "rules2"
     deduplicated_rules = list(unique_rules.values())
-
+    
     # 3. Load embedding model
     try:
         embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
     except Exception as e:
         st.error(f"Embedding model loading error: {e}")
         return None, None, None
-
+    
     # 4. Prepare corpus
     max_text_length = 300
     corpus = [
         f"{r.get('title', r.get('text', '')[:30] or 'No title')}. {r.get('text', '')[:max_text_length] or 'No text'}"
         for r in deduplicated_rules
     ]
-
+    
     # 5. Generate embeddings
     batch_size = 16
     embeddings = []
     for i in range(0, len(corpus), batch_size):
         batch = corpus[i:i + batch_size]
         batch_embeddings = embedding_model.encode(
-            batch, batch_size=batch_size, device="cpu"  # Use CPU for Streamlit Cloud
+            batch, batch_size=batch_size, device="cpu"
         )
         embeddings.append(batch_embeddings)
     embeddings = np.vstack(embeddings)
-
+    
     # 6. Create FAISS index
     try:
         dimension = embeddings.shape[1]
@@ -90,7 +98,7 @@ def load_rag_pipeline():
     except Exception as e:
         st.error(f"FAISS index creation error: {e}")
         return None, None, None
-
+    
     st.write(f"✅ FAISS index loaded successfully: {len(corpus)} rules (Time: {time.time() - start:.2f} seconds)")
     return embedding_model, index, deduplicated_rules
 
@@ -107,13 +115,13 @@ def ask_openai_once(query: str, embedding_model, index, deduplicated_rules, top_
     # 1. Encode query and search FAISS
     query_vec = embedding_model.encode([query], device="cpu")
     D, I = index.search(query_vec, k=top_k)
-
+    
     # 2. Create context from top results
     retrieved_context = "\n\n".join([
         f"[{deduplicated_rules[i]['rule_id']}] {deduplicated_rules[i].get('title', 'N/A')}\n{deduplicated_rules[i]['text']}"
         for i in I[0]
     ])
-
+    
     # 3. OpenAI prompt
     prompt = f"""
 You are a legal and compliance expert at GoGoX, a listed company on the Hong Kong Stock Exchange.
@@ -133,7 +141,7 @@ Question:
 
 Answer:
 """
-
+    
     # 4. Call OpenAI API
     try:
         response = client.chat.completions.create(
@@ -163,7 +171,7 @@ if user_query := st.chat_input("Enter your question (e.g., What is the minimum p
     st.session_state.messages.append({"role": "user", "content": user_query})
     with st.chat_message("user"):
         st.markdown(user_query)
-
+    
     with st.spinner("Generating answer..."):
         answer, retrieved_docs = ask_openai_once(
             query=user_query,
@@ -171,13 +179,13 @@ if user_query := st.chat_input("Enter your question (e.g., What is the minimum p
             index=index,
             deduplicated_rules=deduplicated_rules
         )
-
+        
         if answer:
             # Display answer
             with st.chat_message("assistant"):
                 st.markdown(answer)
             st.session_state.messages.append({"role": "assistant", "content": answer})
-
+            
             # Display retrieved documents
             with st.expander("View Retrieved Documents"):
                 for i, doc in enumerate(retrieved_docs):
