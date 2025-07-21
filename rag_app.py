@@ -13,22 +13,26 @@ st.title("GoGoX Regulatory and Disclosure Q&A App")
 st.write("Ask questions based on HKEX Main Board Listing Rules and GoGoX disclosure documents.")
 
 # OpenAI API key setup with debugging
-st.write("Secrets loaded:", st.secrets)  # 디버깅용
-st.write("Current directory:", os.path.dirname(__file__))  # 경로 디버깅
-OPENAI_API_KEY = st.secrets.get("secrets", {}).get("OPENAI_API_KEY")  # 중첩된 secrets에서 추출
+st.write("Secrets loaded:", st.secrets)  # For debugging
+st.write("Current directory:", os.path.dirname(__file__))  # Path debugging
+OPENAI_API_KEY = st.secrets.get("secrets", {}).get("OPENAI_API_KEY")  # Extract from nested secrets
 if not OPENAI_API_KEY:
     st.error("OpenAI API key is not configured. Please contact the administrator.")
     st.stop()
-# 디버깅: OpenAI 클라이언트 초기화 시 인자 확인
+# Debugging: Verify OpenAI client initialization
 st.write("Creating OpenAI client with API key:", OPENAI_API_KEY)
-client = OpenAI(api_key=OPENAI_API_KEY)  # proxies 인자 제거 확인
+try:
+    client = OpenAI(api_key=OPENAI_API_KEY)  # Remove http_client to avoid proxies error
+    st.write("OpenAI client initialized successfully")
+except Exception as e:
+    st.error(f"OpenAI API error: {e}")
+    st.stop()
 
-# 나머지 코드...
-# JSON loading function with dynamic path adjustment
+# Function to load JSON files with dynamic path adjustment
 def load_json(file_path):
     base_path = os.path.dirname(__file__)
     full_path = os.path.join(base_path, file_path)
-    st.write(f"Attempting to load: {full_path}")  # 디버깅용
+    st.write(f"Attempting to load: {full_path}")  # Debugging
     try:
         with open(full_path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -44,7 +48,7 @@ def load_json(file_path):
 def load_rag_pipeline():
     start = time.time()
     
-    # 1. Load JSON data with adjusted paths
+    # 1. Load JSON data
     rules1 = load_json("all_rules_merged.json")
     rules2 = load_json("gogox_announcements.json")
     if not rules1 and not rules2:
@@ -73,7 +77,7 @@ def load_rag_pipeline():
         return None, None, None
     
     # 4. Prepare corpus
-    max_text_length = 300
+    max_text_length = 200  # Reduced to optimize memory usage
     corpus = [
         f"{r.get('title', r.get('text', '')[:30] or 'No title')}. {r.get('text', '')[:max_text_length] or 'No text'}"
         for r in deduplicated_rules
@@ -122,7 +126,7 @@ def ask_openai_once(query: str, embedding_model, index, deduplicated_rules, top_
         for i in I[0]
     ])
     
-    # 3. OpenAI prompt
+    # 3. OpenAI prompt (original prompt preserved)
     prompt = f"""
 You are a legal and compliance expert at GoGoX, a listed company on the Hong Kong Stock Exchange.
 You are responsible for answering internal and external queries based strictly on GoGoX’s official disclosures submitted to the Stock Exchange.
