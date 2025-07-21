@@ -15,15 +15,18 @@ st.write("Ask questions based on HKEX Main Board Listing Rules and GoGoX disclos
 # OpenAI API key setup with debugging
 st.write("Secrets loaded:", st.secrets)  # 디버깅용
 st.write("Current directory:", os.path.dirname(__file__))  # 경로 디버깅
-OPENAI_API_KEY = st.secrets.get("secrets", {}).get("OPENAI_API_KEY")  # 중첩된 secrets에서 추출
+OPENAI_API_KEY = st.secrets.get("secrets", {}).get("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     st.error("OpenAI API key is not configured. Please contact the administrator.")
     st.stop()
-# 디버깅: OpenAI 클라이언트 초기화 시 인자 확인
 st.write("Creating OpenAI client with API key:", OPENAI_API_KEY)
-client = OpenAI(api_key=OPENAI_API_KEY)  # proxies 인자 제거 확인
+try:
+    client = OpenAI(api_key=OPENAI_API_KEY, http_client=None)  # Cloud에서 proxies 문제 해결
+    st.write("OpenAI client initialized successfully")
+except Exception as e:
+    st.error(f"OpenAI API error: {e}")
+    st.stop()
 
-# 나머지 코드...
 # JSON loading function with dynamic path adjustment
 def load_json(file_path):
     base_path = os.path.dirname(__file__)
