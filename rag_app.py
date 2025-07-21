@@ -71,13 +71,13 @@ def load_rag_pipeline():
     
     # 3. Load embedding model
     try:
-        embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+        embedding_model = SentenceTransformer("all-MiniLM-L12-v2")  # Lighter model for memory optimization
     except Exception as e:
         st.error(f"Embedding model loading error: {e}")
         return None, None, None
     
     # 4. Prepare corpus
-    max_text_length = 200  # Reduced to optimize memory usage
+    max_text_length = 200  # Reduced for memory optimization
     corpus = [
         f"{r.get('title', r.get('text', '')[:30] or 'No title')}. {r.get('text', '')[:max_text_length] or 'No text'}"
         for r in deduplicated_rules
