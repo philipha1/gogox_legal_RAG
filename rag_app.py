@@ -7,7 +7,6 @@ import time
 from openai import OpenAI
 import os
 import httpx
-import traceback
 
 # Streamlit page configuration
 st.set_page_config(page_title="GoGoX RAG Q&A", page_icon="🤖")
@@ -15,32 +14,27 @@ st.title("GoGoX Regulatory and Disclosure Q&A App")
 st.write("Ask questions based on HKEX Main Board Listing Rules and GoGoX disclosure documents.")
 
 # OpenAI API key setup with debugging
-st.write("Secrets file path:", os.path.join(os.path.dirname(__file__), ".streamlit/secrets.toml"))
-try:
-    st.write("Secrets loaded:", st.secrets)
-except Exception as e:
-    st.error(f"Secrets loading error: {e}")
-    st.stop()
-# Cloud와 로컬 모두 지원하는 Secrets 접근
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY") or st.secrets.get("secrets", {}).get("OPENAI_API_KEY")
+st.write("Secrets loaded:", st.secrets)  # For debugging
+st.write("Current directory:", os.path.dirname(__file__))  # Path debugging
+OPENAI_API_KEY = st.secrets.get("secrets", {}).get("OPENAI_API_KEY")  # Extract from nested secrets
 if not OPENAI_API_KEY:
     st.error("OpenAI API key is not configured. Please contact the administrator.")
     st.stop()
+# Debugging: Verify OpenAI client initialization
 st.write("Creating OpenAI client with API key:", OPENAI_API_KEY)
 try:
-    http_client = httpx.Client(proxies=None)
+    http_client = httpx.Client(proxies=None)  # Keep proxy setting
     client = OpenAI(api_key=OPENAI_API_KEY, http_client=http_client)
     st.write("OpenAI client initialized successfully")
 except Exception as e:
     st.error(f"OpenAI API error: {e}")
-    st.write("Traceback:", traceback.format_exc())
     st.stop()
 
-# JSON loading function with dynamic path adjustment
+# Function to load JSON files with dynamic path adjustment
 def load_json(file_path):
     base_path = os.path.dirname(__file__)
     full_path = os.path.join(base_path, file_path)
-    st.write(f"Attempting to load: {full_path}")
+    st.write(f"Attempting to load: {full_path}")  # Debugging
     try:
         with open(full_path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -56,7 +50,7 @@ def load_json(file_path):
 def load_rag_pipeline():
     start = time.time()
     
-    # 1. Load JSON data with adjusted paths
+    # 1. Load JSON data
     rules1 = load_json("all_rules_merged.json")
     rules2 = load_json("gogox_announcements.json")
     if not rules1 and not rules2:
@@ -80,7 +74,6 @@ def load_rag_pipeline():
     # 3. Load embedding model
     try:
         embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-        st.write("Embedding model loaded successfully")
     except Exception as e:
         st.error(f"Embedding model loading error: {e}")
         return None, None, None
@@ -108,7 +101,6 @@ def load_rag_pipeline():
         dimension = embeddings.shape[1]
         index = faiss.IndexFlatL2(dimension)
         index.add(embeddings)
-        st.write("FAISS index created successfully")
     except Exception as e:
         st.error(f"FAISS index creation error: {e}")
         return None, None, None
@@ -136,5 +128,84 @@ def ask_openai_once(query: str, embedding_model, index, deduplicated_rules, top_
         for i in I[0]
     ])
     
-    # 3. OpenAI prompt
+    # 3. OpenAI prompt (original prompt preserved)
     prompt = f"""
+You are a legal and compliance expert at GoGoX, a listed company on the Hong Kong Stock Exchange.
+You are responsible for answering internal and external queries based strictly on GoGoX’s official disclosures submitted to the Stock Exchange.
+
+Use only the information provided below, which comes from GoGoX's official filings and announcements on the HKEX website.
+Do not speculate, do not guess, and do not use any external knowledge. Stick only to what is available in the context.
+
+When appropriate, cite the relevant section or announcement title that supports your answer.
+
+GoGoX Official Disclosure Extract:
+-----------------------------------
+{retrieved_context}
+
+Question:
+{query}
+
+Answer:
+"""
+    
+    # 4. Call OpenAI API
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are a legal assistant."},
+                {"role": "user", "content": prompt.strip()}
+            ],
+            temperature=0.2
+        )
+        return response.choices[0].message.content, [deduplicated_rules[i] for i in I[0]]
+    except Exception as e:
+        st.error(f"OpenAI API error: {e}")
+        return None, []
+
+# Chat interface
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Display existing conversation
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# User input for questions
+if user_query := st.chat_input("Enter your question (e.g., What is the minimum public float percentage required by HKEX?)"):
+    st.session_state.messages.append({"role": "user", "content": user_query})
+    with st.chat_message("user"):
+        st.markdown(user_query)
+    
+    with st.spinner("Generating answer..."):
+        answer, retrieved_docs = ask_openai_once(
+            query=user_query,
+            embedding_model=embedding_model,
+            index=index,
+            deduplicated_rules=deduplicated_rules
+        )
+        
+        if answer:
+            # Display answer
+            with st.chat_message("assistant"):
+                st.markdown(answer)
+            st.session_state.messages.append({"role": "assistant", "content": answer})
+            
+            # Display retrieved documents
+            with st.expander("View Retrieved Documents"):
+                for i, doc in enumerate(retrieved_docs):
+                    st.markdown(f"**Document {i+1}** (ID: {doc['rule_id']}, Source: {doc['source']}): {doc.get('title', 'N/A')}")
+                    st.markdown(f"{doc['text'][:200]}...")
+        else:
+            st.error("Failed to generate answer. Please try again.")
+
+# Sidebar: App information
+with st.sidebar:
+    st.header("GoGoX RAG App")
+    st.write("A question-answering system based on HKEX disclosures and GoGoX documents.")
+    st.write("Contact: [Company email or contact person]")
+
+# Footer
+st.markdown("---")
+st.markdown("Built with Streamlit and LangChain. GoGoX dedicated RAG app.")
