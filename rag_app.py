@@ -187,7 +187,7 @@ if user_query := st.chat_input("Enter your question (e.g., What is the minimum p
             # Display answer
             with st.chat_message("assistant"):
                 st.markdown(answer)
-            st.session_state.messages.append({"role": "assistant", "content": answer})
+            st.session_state.messages.append({"role": "assistant", "content": answer})  # 괄호 수정
             
             # Display retrieved documents
             with st.expander("View Retrieved Documents"):
