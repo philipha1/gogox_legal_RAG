@@ -19,11 +19,22 @@ def get_memory_usage():
     mem_info = process.memory_info()
     return mem_info.rss / 1024 / 1024  # Return memory in MB
 
+# Function to rewrite query for better retrieval
+def rewrite_query(query: str) -> str:
+    query = query.lower()
+    if "size test" in query:
+        query += " under Rule 14.07 of the HKEX Main Board Listing Rules"
+    elif "public float" in query:
+        query += " under Rule 8.08 of the HKEX Main Board Listing Rules"
+    elif "disclosure" in query:
+        query += " related to GoGoX announcements"
+    return query
+
 # OpenAI API key setup with debugging
 st.write("Secrets loaded:", st.secrets)  # For debugging
 st.write("Current directory:", os.path.dirname(__file__))  # Path debugging
 st.write(f"Memory usage before OpenAI init: {get_memory_usage():.2f} MB")  # Debugging
-OPENAI_API_KEY = st.secrets.get("secrets", {}).get("OPENAI_API_KEY")  # Extract from nested secrets
+OPENAI_API_KEY = st.secrets.get("secrets", {}).get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")  # Support environment variable for local hosting
 if not OPENAI_API_KEY:
     st.error("OpenAI API key is not configured. Please contact the administrator.")
     st.stop()
@@ -95,10 +106,10 @@ def load_rag_pipeline():
         st.error(f"Embedding model loading error: {e}")
         return None, None, None
     
-    # 4. Prepare corpus
-    max_text_length = 100  # Reduced for memory optimization
+    # 4. Prepare corpus with structured chunking
+    max_text_length = 800  # Increased for richer context
     corpus = [
-        f"{r.get('title', r.get('text', '')[:30] or 'No title')}. {r.get('text', '')[:max_text_length] or 'No text'}"
+        f"[{r.get('rule_id', 'N/A')}] {r.get('title', 'No title')}:\n{r.get('text', 'No text')[:max_text_length]}"
         for r in deduplicated_rules
     ]
     st.write(f"Prepared corpus with {len(corpus)} entries")  # Debugging
@@ -139,25 +150,29 @@ if embedding_model is None or index is None or deduplicated_rules is None:
 
 # Question-answering function
 def ask_openai_once(query: str, embedding_model, index, deduplicated_rules, top_k: int = 5, model="gpt-4"):
-    # 1. Encode query and search FAISS
-    query_vec = embedding_model.encode([query], device="cpu")
+    # 1. Rewrite query for better retrieval
+    rewritten_query = rewrite_query(query)
+    st.write(f"Rewritten query: {rewritten_query}")  # Debugging
+    
+    # 2. Encode query and search FAISS
+    query_vec = embedding_model.encode([rewritten_query], device="cpu")
     D, I = index.search(query_vec, k=top_k)
     
-    # 2. Create context from top results
+    # 3. Create structured context from top results
     retrieved_context = "\n\n".join([
-        f"[{deduplicated_rules[i]['rule_id']}] {deduplicated_rules[i].get('title', 'N/A')}\n{deduplicated_rules[i]['text']}"
+        f"Context Document {i+1} - [{deduplicated_rules[i]['rule_id']}] {deduplicated_rules[i].get('title', 'N/A')}\n-----\n{deduplicated_rules[i]['text'][:800]}"
         for i in I[0]
     ])
     
-    # 3. OpenAI prompt (original prompt preserved)
+    # 4. Enhanced OpenAI prompt
     prompt = f"""
-You are a legal and compliance expert at GoGoX, a listed company on the Hong Kong Stock Exchange.
-You are responsible for answering internal and external queries based strictly on GoGoX’s official disclosures submitted to the Stock Exchange.
+You are a senior legal and compliance expert at GoGoX, specialized in HKEX Main Board Listing Rules and regulatory filings. Your job is to provide clear, concise, and accurate answers based strictly on the provided context from GoGoX's official disclosures and HKEX rules.
 
-Use only the information provided below, which comes from GoGoX's official filings and announcements on the HKEX website.
-Do not speculate, do not guess, and do not use any external knowledge. Stick only to what is available in the context.
-
-When appropriate, cite the relevant section or announcement title that supports your answer.
+Follow these instructions:
+1. Explain the relevant rules or disclosures step-by-step, citing specific clause numbers (e.g., Rule 14.07(1)) or announcement titles when available.
+2. If the question involves calculations (e.g., size tests), show the formula, explain each step, and provide the result.
+3. Use only the context below. If the answer is not found, state clearly: "The provided context does not contain sufficient information to answer the question."
+4. Structure your answer professionally, with bullet points or numbered steps for clarity.
 
 GoGoX Official Disclosure Extract:
 -----------------------------------
@@ -169,12 +184,12 @@ Question:
 Answer:
 """
     
-    # 4. Call OpenAI API
+    # 5. Call OpenAI API
     try:
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": "You are a legal assistant."},
+                {"role": "system", "content": "You are a senior legal assistant specialized in HKEX regulations."},
                 {"role": "user", "content": prompt.strip()}
             ],
             temperature=0.2
